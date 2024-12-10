@@ -1,80 +1,94 @@
-import time
-
 import cv2
 import mediapipe as mp
-import numpy as np
+import openai
 from deepface import DeepFace
 
-# Initialize Mediapipe
+# OpenAI API setup
+openai.api_key = "your_openai_api_key"
+
+# Mediapipe setup for gesture tracking
 mp_hands = mp.solutions.hands
-mp_pose = mp.solutions.pose
-hands = mp_hands.Hands()
-pose = mp_pose.Pose()
+hands = mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-# Helper function: Analyze emotional trends
-def analyze_emotions(emotion_counts):
-    """
-    Analyze trends in emotions based on the count of emotions observed.
-    """
-    if not emotion_counts:
-        return "Neutral"
-    dominant_emotion = max(emotion_counts, key=emotion_counts.get)
-    return dominant_emotion
+# Vision, mission, and core values
+company_vision = "To innovate and inspire through technology."
+company_mission = "Deliver high-quality, impactful solutions."
+company_values = "Integrity, collaboration, and customer focus."
 
-# Initialize variables for emotion trends
-emotion_counts = {}
-start_time = time.time()
+# Questions and metadata
+questions = [
+    {"text": "How do you handle conflict in a team?", "category": "Core Values"},
+    {"text": "Where do you see yourself in 5 years?", "category": "Vision"},
+    {"text": "What motivates you to excel at work?", "category": "Mission"}
+]
 
-# Start video capture
+# Video capture
 cap = cv2.VideoCapture(0)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+for idx, question in enumerate(questions):
+    print(f"Question {idx + 1}: {question['text']}")
+    print("Answer verbally and use gestures...")
 
-    try:
-        # Resize frame for faster processing
-        frame = cv2.resize(frame, (640, 480))
+    candidate_response = input("Summarize your response for the record: ")  # Simulate a transcript
+    dominant_emotion = "Neutral"
+    gesture_score = "Unknown"
 
-        # Analyze face for emotions
-        analysis = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
-        current_emotion = analysis[0]['dominant_emotion']
-        emotion_counts[current_emotion] = emotion_counts.get(current_emotion, 0) + 1
-    except Exception as e:
-        current_emotion = "Unknown"
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-    # Analyze hand gestures
-    hand_label = "Unknown"
-    results_hands = hands.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    if results_hands.multi_hand_landmarks:
-        hand_label = "Expressive"
+        # Analyze facial emotion
+        try:
+            analysis = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
+            dominant_emotion = analysis[0]['dominant_emotion']
+        except Exception:
+            pass
 
-    # Analyze posture for confidence
-    results_pose = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    posture_label = "Unknown"
-    if results_pose.pose_landmarks:
-        landmarks = results_pose.pose_landmarks.landmark
-        posture_label = "Upright" if landmarks[mp_pose.PoseLandmark.NOSE.value].y < landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y else "Slouching"
+        # Analyze gestures
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = hands.process(rgb_frame)
+        if result.multi_hand_landmarks:
+            gesture_score = "Expressive"
+        else:
+            gesture_score = "Calm"
 
-    # Display emotional trends
-    elapsed_time = time.time() - start_time
-    if elapsed_time > 10:  # Analyze trends every 10 seconds
-        dominant_emotion = analyze_emotions(emotion_counts)
-        emotion_counts = {}  # Reset for the next interval
-        start_time = time.time()
-    else:
-        dominant_emotion = "Analyzing..."
+        # Display video with current emotion and gesture data
+        cv2.putText(frame, f"Emotion: {dominant_emotion}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(frame, f"Gesture: {gesture_score}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.imshow("Interview Analysis", frame)
 
-    # Display results
-    cv2.putText(frame, f"Current Emotion: {current_emotion}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    cv2.putText(frame, f"Dominant Emotion: {dominant_emotion}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    cv2.putText(frame, f"Posture: {posture_label}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    cv2.putText(frame, f"Hand Gesture: {hand_label}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-    cv2.imshow("Comprehensive Behavioral Analysis", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        break  # Move to next question after some processing
+
+    # GPT Analysis
+    input_prompt = f"""
+    The company has the following principles:
+    Vision: {company_vision}
+    Mission: {company_mission}
+    Core Values: {company_values}
+
+    Question: {question['text']}
+    Candidate's Answer: {candidate_response}
+    Observations:
+    - Emotion: {dominant_emotion}
+    - Gesture: {gesture_score}
+
+    Assess how well the candidate aligns with the company's culture and provide a qualitative summary.
+    """
+    gpt_response = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=input_prompt,
+        max_tokens=200
+    )
+
+    print("\nGPT Analysis:")
+    print(gpt_response['choices'][0]['text'].strip())
+
+    # Add a small pause between questions
+    input("Press Enter to proceed to the next question...")
 
 cap.release()
 cv2.destroyAllWindows()
