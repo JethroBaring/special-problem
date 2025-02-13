@@ -11,16 +11,29 @@ from nltk.corpus import wordnet
 import speech_recognition as sr
 import time
 import whisper
-
-
+import pyaudio
+import numpy as np
+import librosa
+import tkinter as tk
+from scipy.signal import find_peaks
+import sounddevice as sd  # Ensure this is included
+import scipy
 # Initialize Mediapipe
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose()
 # Initialize text-to-speech
 engine = pyttsx3.init()
 recognizer = sr.Recognizer()
+import google.generativeai as genai  # Import Gemini API
 
+genai.configure(api_key="AIzaSyDwLPKzexRfCby7a9lQZYelhlWbx3Smylc")
+
+# Store responses
+responses = []
+dominant_emotion = "Unknown"  # Global variable for emotion
+posture_status = "Neutral" 
 # Initialize sentiment analyzer
 nltk.download('vader_lexicon')
 nltk.download('wordnet')
@@ -62,11 +75,15 @@ def process_frame():
         photo = ImageTk.PhotoImage(image=img)
         video_label.config(image=photo)
         video_label.image = photo
+        
+        # Analyze Posture
+        posture_status = analyze_posture(frame)
+        posture_label.config(text=f"Posture: {posture_status}")  # Update UI
     root.after(10, process_frame)
 
 # Emotion analysis (run every 2 seconds)
 def analyze_emotion():
-    global cap
+    global cap, dominant_emotion
     ret, frame = cap.read()
     if ret:
         try:
@@ -117,7 +134,13 @@ def capture_response():
                 MyText = recognizer.recognize_google(audio)
                 response = MyText
                 print(f"✅ Recognized response: {response}")  # Debugging
-                
+                r = {}
+                r["question"] = questions[question_index-1]
+                r["response"] = MyText
+                r["posture"] = posture_status
+                r["emotion"] = dominant_emotion
+                print(r)
+                responses.append(r)
                 root.after(0, update_response, response)
             except sr.UnknownValueError:
                 print("⚠ Could not understand audio.")  # Debugging
@@ -135,6 +158,37 @@ def update_response(response):
     previous_response = response  # Ensure it's stored correctly
     response_label.config(text=f"Response: {response}")
     evaluate_response(response)
+
+# Evaluate interview using Gemini AI
+def analyze_with_gemini():
+    # Convert each dictionary in responses to a formatted string
+    formatted_responses = [
+        f"Question: {r['question']}\nResponse: {r['response']}\nPosture: {r['posture']}\nEmotion: {r['emotion']}"
+        for r in responses
+    ]
+
+    # Join formatted responses with new lines
+    full_text = "\n\n".join(formatted_responses)
+
+    prompt = f"""
+    You are an AI HR assistant evaluating a candidate’s interview performance.
+    The company values include innovation, teamwork, integrity, and growth.
+    
+    Below are the candidate's responses, along with detected body posture and emotions:
+    
+    {full_text}
+
+    Provide:
+    - Strengths
+    - Areas for improvement
+    - A culture fit score (0-10)
+    """
+
+    model = genai.GenerativeModel("gemini-pro")  # Use Gemini AI model
+    response = model.generate_content(prompt)
+
+    feedback_label.config(text=f"Gemini AI Feedback:\n{response.text}")
+
 
 # Start interview
 def start_interview():
@@ -164,6 +218,122 @@ def next_question():
         speak("Thank you for participating in the interview.")
         start_button.config(state=tk.DISABLED)
         listening_label.config(text="")
+        analyze_with_gemini()
+
+def check_camera_type():
+    # Try opening the default camera (0)
+    cap = cv2.VideoCapture(0)
+    built_in_camera = cap.isOpened()
+    cap.release()
+    
+    # Try opening another camera (1)
+    cap = cv2.VideoCapture(1)
+    external_camera = cap.isOpened()
+    cap.release()
+
+    if built_in_camera and external_camera:
+        return "Camera: Built-in & External Detected"
+    elif built_in_camera:
+        return "Camera: Built-in"
+    elif external_camera:
+        return "Camera: External Only"
+    else:
+        return "No Camera Detected"
+
+# Detect Microphone Type
+def list_microphones():
+    audio = pyaudio.PyAudio()
+    mic_info = "No Microphone Detected"
+    for i in range(audio.get_device_count()):
+        device_info = audio.get_device_info_by_index(i)
+        if device_info['maxInputChannels'] > 0:
+            mic_info = f"Mic: {device_info['name']} ({'Built-in' if 'internal' in device_info['name'].lower() else 'External'})"
+            break  # Assume the first valid input is the primary mic
+    audio.terminate()
+    return mic_info
+
+# Update hardware labels
+def update_hardware_info():
+    camera_label.config(text=check_camera_type())
+    mic_label.config(text=list_microphones())
+
+# Analyze environment noise level
+def analyze_environment_noise():
+    sample_rate = 16000  # Sampling rate in Hz
+    duration = 2  # Capture duration in seconds
+
+    def record_audio():
+        audio_data = sd.rec(int(sample_rate * duration), samplerate=sample_rate, channels=1, dtype='float32')
+        sd.wait()
+        noise_level = np.mean(np.abs(audio_data))
+        noise_label.config(text=f"Background Noise: {'High' if noise_level > 0.02 else 'Low'}")
+
+    threading.Thread(target=record_audio, daemon=True).start()
+
+# Analyze speech tone
+def analyze_audio_tone():
+    sample_rate = 16000  # Sampling rate in Hz
+    duration = 2  # Capture duration in seconds
+
+    def record_audio():
+        audio_data = sd.rec(int(sample_rate * duration), samplerate=sample_rate, channels=1, dtype='float32')
+        sd.wait()
+        audio_data = audio_data.flatten()
+
+        # Compute Pitch
+        pitches, magnitudes = librosa.piptrack(y=audio_data, sr=sample_rate)
+        pitch_values = pitches[magnitudes > np.median(magnitudes)]
+        avg_pitch = np.mean(pitch_values) if len(pitch_values) > 0 else 0
+
+        # Compute Loudness
+        avg_loudness = np.mean(librosa.feature.rms(y=audio_data))
+
+        # Compute Speech Rate (based on peaks in amplitude)
+        peaks, _ = scipy.signal.find_peaks(librosa.feature.rms(y=audio_data).flatten(), height=0.02, distance=sample_rate//4)
+        speech_rate = len(peaks) / duration
+
+        # Update UI
+        pitch_label.config(text=f"Pitch: {round(avg_pitch, 2)} Hz")
+        loudness_label.config(text=f"Loudness: {round(avg_loudness, 4)}")
+        speech_rate_label.config(text=f"Speech Rate: {round(speech_rate, 2)} words/sec")
+
+    threading.Thread(target=record_audio, daemon=True).start()
+
+def analyze_posture(frame):
+    global posture_status
+    """Analyzes upper-body posture for interview scenarios."""
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = pose.process(frame_rgb)
+
+    if results.pose_landmarks:
+        landmarks = results.pose_landmarks.landmark
+
+        # Get key upper-body points
+        nose = landmarks[mp_pose.PoseLandmark.NOSE]
+        left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER]
+        right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+
+        # Calculate shoulder alignment
+        shoulder_diff = abs(left_shoulder.y - right_shoulder.y)
+
+        # Calculate head tilt (nose position relative to shoulders)
+        head_tilt = abs(nose.x - ((left_shoulder.x + right_shoulder.x) / 2))
+
+        # Determine posture based on values
+        if shoulder_diff < 0.03 and head_tilt < 0.02:
+            posture_status = "Good Posture"
+            return "Good Posture ✅"
+        elif shoulder_diff > 0.05:
+            posture_status = "Uneven Shoulders"
+            return "Uneven Shoulders ⚠"
+        elif head_tilt > 0.03:
+            posture_status = "Head Tilt"
+            return "Head Tilt ⚠"
+        else:
+            posture_status = "Unclear Posture"
+            return "Unclear Posture"
+    
+    return "No Person Detected ❌"
 
 # Sample questions
 questions = [
@@ -199,12 +369,42 @@ feedback_label = tk.Label(info_frame, text="Feedback: ", font=("Arial", 12))
 feedback_label.pack(pady=10)
 start_button = tk.Button(info_frame, text="Start", command=start_interview, font=("Arial", 12))
 start_button.pack(pady=10)
+# Hardware Info Labels
+camera_label = tk.Label(info_frame, text="Detecting Camera...", font=("Arial", 12))
+camera_label.pack(pady=5)
+mic_label = tk.Label(info_frame, text="Detecting Microphone...", font=("Arial", 12))
+mic_label.pack(pady=5)
+
+# Noise & Speech Analysis Labels
+noise_label = tk.Label(info_frame, text="Background Noise: Analyzing...", font=("Arial", 10))
+noise_label.pack(pady=5)
+pitch_label = tk.Label(info_frame, text="Pitch: Analyzing...", font=("Arial", 10))
+pitch_label.pack(pady=5)
+loudness_label = tk.Label(info_frame, text="Loudness: Analyzing...", font=("Arial", 10))
+loudness_label.pack(pady=5)
+speech_rate_label = tk.Label(info_frame, text="Speech Rate: Analyzing...", font=("Arial", 10))
+speech_rate_label.pack(pady=5)
+
+# Posture
+posture_label = tk.Label(info_frame, text="Posture: Analyzing...", font=("Arial", 12))
+posture_label.pack(pady=10)
+
+# Function to continuously update noise & audio analysis
+def update_audio_analysis():
+    analyze_environment_noise()
+    analyze_audio_tone()
+    root.after(5000, update_audio_analysis)  # Run every 5 seconds
+
+# Start Updating
+update_audio_analysis()
+
 
 # Open video capture
 cap = cv2.VideoCapture(0)
 process_frame()
 analyze_emotion()
-
+# Update hardware info at startup
+update_hardware_info()
 root.mainloop()
 cap.release()
 cv2.destroyAllWindows()
