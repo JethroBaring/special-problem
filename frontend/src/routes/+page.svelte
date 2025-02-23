@@ -9,7 +9,7 @@
       const stream = await navigator.mediaDevices.getUserMedia({ video: true }); // Removed audio
       videoElement!.srcObject = stream;
 
-      wsVideo = new WebSocket("ws://127.0.0.1:8000/test/ws/video");
+      wsVideo = new WebSocket("ws://api.dev.intervly.jethdev.tech/test/ws/video");
 
       wsVideo.onopen = () => console.log("✅ Connected to Video WebSocket");
       wsVideo.onerror = (error) => console.error("❌ WebSocket error:", error);
