@@ -4,7 +4,7 @@ from app.routes import post_analysis, realtime_analysis
 
 app = FastAPI(title="AI Interview Microservice")
 
-# # Allow frontend origin
+# Allow frontend origin
 # origins = [
 #     "http://localhost:5173",  # Adjust this to match your frontend
 #     "http://127.0.0.1:5173"
