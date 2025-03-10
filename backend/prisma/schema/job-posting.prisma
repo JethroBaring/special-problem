@@ -1,0 +1,46 @@
+model JobPosting {
+  id           String    @id @default(cuid())
+  title        String
+  description  String
+  requirements String?
+  location     String?
+  salary       String?
+  jobType      JobType
+  status       JobStatus @default(OPEN)
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+
+  applications JobApplication[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  JobCategory JobCategory[]
+}
+
+model JobCategory {
+  id   String @id @default(cuid())
+  name String @unique
+
+  jobPostings JobPosting[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  REMOTE
+  CONTRACT
+  TEMPORARY
+  INTERNSHIP
+}
+
+enum JobStatus {
+  OPEN
+  CLOSED
+}

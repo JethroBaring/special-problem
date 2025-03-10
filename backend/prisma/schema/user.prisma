@@ -1,0 +1,20 @@
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  password     String
+  refreshToken String?
+  role         Role    @default(CANDIDATE)
+
+  candidate     Candidate?
+  company       Company?
+  notifications Notification[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+enum Role {
+  CANDIDATE
+  COMPANY
+}

@@ -1,0 +1,21 @@
+model JobApplication {
+  id        String            @id @default(cuid())
+  status    ApplicationStatus @default(PENDING)
+  appliedAt DateTime          @default(now())
+
+  job   JobPosting @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId String
+
+  applicant   Candidate @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantId String
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}

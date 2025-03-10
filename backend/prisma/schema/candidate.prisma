@@ -1,0 +1,16 @@
+model Candidate {
+  id         String   @id @default(cuid())
+  firstName  String
+  lastName   String
+  bio        String?
+  resumeUrl  String?
+  skills     String[]
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+
+  jobApplications JobApplication[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

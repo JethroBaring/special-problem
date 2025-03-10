@@ -1,0 +1,16 @@
+model Company {
+  id          String  @id @default(cuid())
+  name        String
+  industry    String?
+  location    String?
+  websiteUrl  String?
+  description String?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+
+  jobPostings JobPosting[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
