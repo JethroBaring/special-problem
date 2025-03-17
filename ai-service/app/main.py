@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import post_analysis, realtime_analysis
+from app.routes import realtime_analysis
 
 app = FastAPI(title="AI Interview Microservice")
 
@@ -19,7 +19,7 @@ app = FastAPI(title="AI Interview Microservice")
 # )
 
 # Production: Post-Interview Analysis
-app.include_router(post_analysis.router, prefix="/post")
+# app.include_router(post_analysis.router, prefix="/post")
 
 # Testing: Real-Time Audio Analysis
 app.include_router(realtime_analysis.router, prefix="/test")
